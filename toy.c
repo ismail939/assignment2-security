@@ -1,187 +1,125 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <time.h>
-// #include "toy.h"
-#define K_SIZE 3
-#define N_SIZE 4
-#define Q_VAL 97
-#define P_SIZE 4
-void multiply_Polynomial(short *result, short *a, short *b, int add_to_result){
-    short temp[4];
+#include "string.h"
 
-    temp[0] = (a[0]*b[0] - a[3]*b[1] - a[2]*b[2] - a[1]*b[3]) % Q_VAL;
-    temp[1] = (a[1]*b[0] + a[0]*b[1] - a[3]*b[2] - a[2]*b[3]) % Q_VAL;
-    temp[2] = (a[2]*b[0] + a[1]*b[1] + a[0]*b[2] - a[3]*b[3]) % Q_VAL;
-    temp[3] = (a[3]*b[0] + a[2]*b[1] + a[1]*b[2] + a[0]*b[3]) % Q_VAL;
+// toy.h:
 
-    if(add_to_result == 1){
-        result[0] += temp[0];
-        result[1] += temp[1];
-        result[2] += temp[2];
-        result[3] += temp[3];
-    }
-    else{
-        result[0] = temp[0];
-        result[1] = temp[1];
-        result[2] = temp[2];
-        result[3] = temp[3];
-    }
-}
+//toy Post-Quantum Public-Key Cryptosystem
+#define TK_K 3
+#define TK_N 4
 
-void add_Polynomial(short *destination, short *term, short *extra){
-    destination[0] = (term[0] + extra[0]) % Q_VAL;
-    destination[1] = (term[1] + extra[1]) % Q_VAL;
-    destination[2] = (term[2] + extra[2]) % Q_VAL;
-    destination[3] = (term[3] + extra[3]) % Q_VAL;
-}
+//toy.c:
+#define TK_Q 97
+#define TK_SQRT_W 33
+#define TK_W 22
 
-void subtract_Polynomial(short *destination, short *term, short *extra){
-    destination[0] = (term[0] - extra[0]) % Q_VAL;
-    destination[1] = (term[1] - extra[1]) % Q_VAL;
-    destination[2] = (term[2] - extra[2]) % Q_VAL;
-    destination[3] = (term[3] - extra[3]) % Q_VAL;
-}
+#define NEG(X) (TK_Q-(X))
 
-void matrix_vector_multiply(short *product, short *matrix, short *vector){
-    short result_conv[K_SIZE*K_SIZE*N_SIZE];
-    
-    for (int i = 0; i < K_SIZE; i++) {
-            multiply_Polynomial(&result_conv[(i*K_SIZE*N_SIZE) + (0*N_SIZE)], &matrix[(i*K_SIZE*N_SIZE) + (0*N_SIZE)], &vector[0*N_SIZE], 0);
-            multiply_Polynomial(&result_conv[(i*K_SIZE*N_SIZE) + (1*N_SIZE)], &matrix[(i*K_SIZE*N_SIZE) + (1*N_SIZE)], &vector[1*N_SIZE], 0);
-            multiply_Polynomial(&result_conv[(i*K_SIZE*N_SIZE) + (2*N_SIZE)], &matrix[(i*K_SIZE*N_SIZE) + (2*N_SIZE)], &vector[2*N_SIZE], 0);
-    }
-    
-    add_Polynomial(&product[0*N_SIZE], &result_conv[0*N_SIZE], &result_conv[1*N_SIZE]);
-    add_Polynomial(&product[0*N_SIZE], &product[0*N_SIZE], &result_conv[2*N_SIZE]);
-
-    add_Polynomial(&product[1*N_SIZE], &result_conv[3*N_SIZE], &result_conv[4*N_SIZE]);
-    add_Polynomial(&product[1*N_SIZE], &product[1*N_SIZE], &result_conv[5*N_SIZE]);
-
-    add_Polynomial(&product[2*N_SIZE], &result_conv[6*N_SIZE], &result_conv[7*N_SIZE]);
-    add_Polynomial(&product[2*N_SIZE], &product[2*N_SIZE], &result_conv[8*N_SIZE]);
-}
-
-void generate_polynomials(short *matrix, short *term, short *noise){
-    for (int i = 0; i < K_SIZE*K_SIZE*N_SIZE; i++) {
-            matrix[i] = rand() % Q_VAL;
-    }
-
-    for (int i = 0; i < K_SIZE*N_SIZE; i++) {
-        int value = rand() & 3;
-        noise[i] = (value & 1) - ((value >> 1) & 1);
-        noise[i] %= Q_VAL;
-    }
-
-    short error1[K_SIZE*N_SIZE];
-    for (int i = 0; i < K_SIZE*N_SIZE; i++) {
-        int value = rand() & 3;
-        error1[i] = (value & 1) - ((value >> 1) & 1);
-        error1[i] %= Q_VAL;
-    }
-
-    matrix_vector_multiply(term, matrix, noise);
-
-    for(int i = 0; i < K_SIZE*N_SIZE; i += N_SIZE){
-        add_Polynomial(&term[i], &term[i], &error1[i]);
+static void toy_fill_small(short *buf, int n)
+{
+    for (int k = 0; k < n; k++)
+    {
+        short val = rand() & 15;
+        val = (val >> 1 & 1) - (val & 1);
+        if (val < 0)
+            val += TK_Q;
+        buf[k] = val;
     }
 }
 
-void swap_matrix(short *mat, int index1, int index2){
-    index1 = index1 * N_SIZE;
-    index2 = index2 * N_SIZE;
-    short temporary[N_SIZE];
-
-    temporary[0] = mat[index1 + 0];
-    temporary[1] = mat[index1 + 1];
-    temporary[2] = mat[index1 + 2];
-    temporary[3] = mat[index1 + 3];
-
-    mat[index1 + 0] = mat[index2 + 0];
-    mat[index1 + 1] = mat[index2 + 1];
-    mat[index1 + 2] = mat[index2 + 2];
-    mat[index1 + 3] = mat[index2 + 3];
-
-    mat[index2 + 0] = temporary[0];
-    mat[index2 + 1] = temporary[1];
-    mat[index2 + 2] = temporary[2];
-    mat[index2 + 3] = temporary[3];
+void toy_polmul_naive(short *dst, const short *a, const short *b, int add){
+	dst[0] = ((dst[0]&-add) + a[0]*b[0] + NEG(a[3])*b[1] + NEG(a[2])*b[2] + NEG(a[1])*b[3]) % TK_Q;
+	dst[1] = ((dst[1]&-add) + a[1]*b[0] + a[0]*b[1] + NEG(a[3])*b[2] + NEG(a[2])*b[3]) % TK_Q;
+	dst[2] = ((dst[2]&-add) + a[2]*b[0] + a[1]*b[1] + a[0]*b[2] + NEG(a[3])*b[3]) % TK_Q;
+	dst[3] = ((dst[3]&-add) + a[3]*b[0] + a[2]*b[1] + a[1]*b[2] + a[0]*b[3]) % TK_Q;
 }
 
-void transpose_matrix(short *matrix) {
-    swap_matrix(matrix, 1, 3);
-    swap_matrix(matrix, 5, 7);
-    swap_matrix(matrix, 2, 6);
+static void toy_mulmv(short *dst, const short *mat, const short *vec)
+{
+    memset(dst, 0, TK_K * TK_N * sizeof(short));
+    for (int kv = 0, idx = 0; kv < TK_K * TK_N; kv += TK_N)
+    {
+        for (int k = 0; k < TK_K * TK_N; k += TK_N, idx += TK_N)
+            toy_polmul_naive(dst + kv, mat + idx, vec + k, 1);
+    }
 }
 
-void encrypt(short *matrix, short *term, int plaintext, short *u, short *v){
-
-    short random_polynomial[K_SIZE*N_SIZE];
-    short error1[K_SIZE*N_SIZE];
-    short error2[N_SIZE];
-
-    for (int i = 0; i < K_SIZE*N_SIZE; i++) {
-        int value = rand() & 3;
-        random_polynomial[i] = (value & 1) - ((value >> 1) & 1);
-        random_polynomial[i] %= Q_VAL;
+static void toy_mulmTv(short *dst, const short *mat, const short *vec)
+{
+    memset(dst, 0, TK_K * TK_N * sizeof(short));
+    for (int kv = 0; kv < TK_K * TK_N; kv += TK_N)
+    {
+        for (int k = 0; k < TK_K * TK_N; k += TK_N)
+            toy_polmul_naive(dst + kv, mat + TK_K * k + kv, vec + k, 1);
     }
-
-    for (int i = 0; i < K_SIZE*N_SIZE; i++) {
-        int value = rand() & 3;
-        error1[i] = (value & 1) - ((value >> 1) & 1);
-        error1[i] %= Q_VAL;
-    }
-
-    for (int i = 0; i < N_SIZE; i++) {
-        int value = rand() & 3;
-        error2[i] = (value & 1) - ((value >> 1) & 1);
-        error2[i] %= Q_VAL;
-    }
-
-    transpose_matrix(matrix);
-    matrix_vector_multiply(u, matrix, random_polynomial);
-    add_Polynomial(u, u, error1);
-    
-    short message_bits[P_SIZE];
-    for(int i = 0; i < P_SIZE; i++){
-        message_bits[i] = (plaintext >> i & 1) * (Q_VAL / 2);
-    }
-
-    short temp[K_SIZE*N_SIZE];
-    short vv[N_SIZE];
-    multiply_Polynomial(&temp[0], &term[0], &random_polynomial[0], 0);
-    multiply_Polynomial(&temp[4], &term[4], &random_polynomial[4], 0);
-    multiply_Polynomial(&temp[8], &term[8], &random_polynomial[8], 0);
-
-    add_Polynomial(&vv[0*N_SIZE], &temp[0*N_SIZE], &temp[1*N_SIZE]);
-    add_Polynomial(&vv[0*N_SIZE], &vv[0*N_SIZE], &temp[2*N_SIZE]);
-
-    add_Polynomial(error2, vv, error2);
-    add_Polynomial(v, message_bits, error2);
 }
 
-int decrypt(short *noise, short *u, short *v){
-    short temp[K_SIZE*N_SIZE];
-    short vv[N_SIZE];
-    multiply_Polynomial(&temp[0], &noise[0], &u[0], 0);
-    multiply_Polynomial(&temp[4], &noise[4], &u[4], 0);
-    multiply_Polynomial(&temp[8], &noise[8], &u[8], 0);
-
-    add_Polynomial(&vv[0*N_SIZE], &temp[0*N_SIZE], &temp[1*N_SIZE]);
-    add_Polynomial(&vv[0*N_SIZE], &vv[0*N_SIZE], &temp[2*N_SIZE]);
-
-    short p[N_SIZE];
-
-    subtract_Polynomial(p, v, vv);
-
-    int plaintext = 0;
-    int value;
-    int bit;
-    for (int i = 0; i < P_SIZE; i++){
-        value = p[i];
-        if(value > Q_VAL / 2)
-            value -= Q_VAL;
-        bit = abs(value) > Q_VAL / 4;
-        plaintext |= bit << i;
-    }
-    return plaintext;
+static void toy_dot(short *dst, const short *v1, const short *v2)
+{
+    memset(dst, 0, TK_N * sizeof(short));
+    for (int k = 0; k < TK_K * TK_N; k += TK_N)
+        toy_polmul_naive(dst, v1 + k, v2 + k, 1);
 }
+
+static void toy_add(short *dst, const short *v1, const short *v2, int count, int v2_neg)
+{
+    for (int k = 0; k < count; ++k)
+    {
+        short val = v2[k];
+        if (v2_neg)
+            val = NEG(val);
+        dst[k] = (v1[k] + val) % TK_Q;
+    }
+}
+
+void toy_gen(short *A, short *t, short *s){
+	short e[TK_K * TK_N];
+    for (int k = 0; k < TK_K * TK_K * TK_N; ++k)
+        A[k] = rand() % TK_Q;
+    toy_fill_small(s, TK_K * TK_N);
+    toy_fill_small(e, TK_K * TK_N);
+    toy_mulmv(t, A, s); 						// t=A.s +e
+    toy_add(t, t, e, TK_K * TK_N, 0);
+
+}
+void toy_enc(const short *A, const short *t, int plain, short *u, short *v){
+	short r[TK_K * TK_N], e1[TK_K * TK_N], e2[TK_N];
+    toy_fill_small(r, TK_K * TK_N);
+    toy_fill_small(e1, TK_K * TK_N);
+    toy_fill_small(e2, TK_N);
+
+    toy_mulmTv(u, A, r); 						// u = AT.r + el
+    //toy_add(u, u, e1, TK_K * TK_N, 0);
+
+    toy_dot(v, t, r); 							// v = tT.r + e2 + plainxq/2
+    //toy_add(v, v, e2, TK_N, 9);
+    for (int k = 0; k < TK_N; ++k)
+        v[k] = (v[k] + ((TK_Q >> 1) & -(plain >> k & 1))) % TK_Q;
+}
+
+int toy_dec(const short *s, const short *u, const short *v){
+	short p[TK_N], plain;
+    toy_dot(p, s, u);
+    toy_add(p, v, p, TK_N, 1);
+    plain = 0;
+    for (int k = 0; k < TK_N; ++k)
+    {
+        int val = p[k];
+        if (val > TK_Q / 2)
+            val -= TK_Q;
+		printf("%5d ", val);
+        int bit = abs(val) > TK_Q / 4;
+        // int bit = abs(val)>TK_Q/4;
+        // int bit = val>TK_Q/4 && val<TK_Q*3/4;
+        plain |= bit << k;
+        //plain |= bit << (TK_N-1-k);
+    }
+    return plain;
+}
+
+void print_binary(int n, int n_bits){
+	for(int i=n_bits-1;i>=0;i--){
+		putchar((n&(1<<i))?'1':'0');
+	}
+}
+
